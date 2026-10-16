@@ -3,10 +3,11 @@
 // This client config is not a service-account secret. NEVER put service-account JSON
 // or private server credentials in this file.
 export const firebaseConfig = {
-  apiKey: "PASTE_FIREBASE_WEB_API_KEY_HERE",
-  authDomain: "PASTE_PROJECT_ID_HERE.firebaseapp.com",
-  projectId: "PASTE_PROJECT_ID_HERE",
-  appId: "PASTE_FIREBASE_APP_ID_HERE",
-  messagingSenderId: "PASTE_MESSAGING_SENDER_ID_HERE"
+  apiKey: "AIzaSyDXlru4Tt19yqfIe3oKUtc3yn5v_l55fms",
+  authDomain: "modelaitools.firebaseapp.com",
+  projectId: "modelaitools",
+  appId: "1:833872426359:web:67a321c8b5619ca79d5d72",
+  messagingSenderId: "833872426359"
+  measurementId: "G-DZM6GER0W6"
 };
 export const firebaseConfigured = Object.values(firebaseConfig).every(v => typeof v === "string" && v.length > 0 && !v.startsWith("PASTE_"));
