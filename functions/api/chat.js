@@ -1,11 +1,4 @@
-// MODEL AI — Cloudflare Pages chat API
-// Supports Gemini's OpenAI-compatible API.
-// File path: functions/api/chat.js
-
-const MAX_BODY = 5 * 1024 * 1024;
-const MAX_MESSAGES = 20;
-const MAX_TEXT_CHARS = 14000;
-
+// MODEL AI — Cloudflare Pages chat function
 const DEFAULT_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta/openai";
 
@@ -15,222 +8,153 @@ const HEADERS = {
   "X-Content-Type-Options": "nosniff",
 };
 
-function json(status, payload) {
-  return new Response(JSON.stringify(payload), {
+function json(status, data) {
+  return new Response(JSON.stringify(data), {
     status,
     headers: HEADERS,
   });
 }
 
-// Diagnostic route: GET /api/chat
+// Health check: GET /api/chat
 export function onRequestGet() {
   return json(200, {
     ok: true,
-    route: "/api/chat",
-    message: "MODEL AI chat function is deployed. Use POST to chat.",
+    message: "MODEL AI chat route is active.",
   });
 }
 
-// Actual AI chat route: POST /api/chat
+// AI chat: POST /api/chat
 export async function onRequestPost({ request, env }) {
+  console.log("[MODEL AI] POST handler started");
+
   try {
     const apiKey = String(env?.AI_API_KEY || "").trim();
     const model = String(env?.AI_CHAT_MODEL || "").trim();
-
     const base = String(
       env?.AI_API_BASE_URL || DEFAULT_API_BASE
-    )
-      .trim()
-      .replace(/\/+$/, "");
+    ).trim().replace(/\/+$/, "");
 
-    // Check Cloudflare configuration.
     if (!apiKey || !model) {
+      console.error("[MODEL AI] API key or model is missing");
+
       return json(503, {
-        error:
-          "AI is not configured. Add AI_API_KEY as a Cloudflare Secret and AI_CHAT_MODEL as a variable.",
+        error: "Missing AI_API_KEY or AI_CHAT_MODEL in Cloudflare settings.",
       });
     }
 
-    // Check request size.
-    const contentLength = Number(
-      request.headers.get("content-length") || "0"
-    );
-
-    if (contentLength > MAX_BODY) {
-      return json(413, {
-        error: "Request is too large. Please reduce the message or image size.",
-      });
-    }
-
-    // Read JSON request.
     let body;
 
     try {
       body = await request.json();
     } catch {
-      return json(400, {
-        error: "Invalid JSON request.",
-      });
+      return json(400, { error: "Request body is not valid JSON." });
     }
 
-    if (
-      !body ||
-      !Array.isArray(body.messages) ||
-      body.messages.length < 1 ||
-      body.messages.length > MAX_MESSAGES
-    ) {
-      return json(400, {
-        error: `Send between 1 and ${MAX_MESSAGES} messages.`,
-      });
+    if (!Array.isArray(body?.messages) || body.messages.length === 0) {
+      return json(400, { error: "No chat messages were supplied." });
     }
 
-    // Validate the conversation.
-    let totalChars = 0;
+    const url = `${base}/chat/completions`;
 
-    for (const message of body.messages) {
-      if (
-        !message ||
-        !["user", "assistant", "system"].includes(message.role)
-      ) {
-        return json(400, {
-          error: "Unsupported message format.",
-        });
-      }
+    console.log("[MODEL AI] Calling provider", {
+      model,
+      endpoint: url,
+      messages: body.messages.length,
+    });
 
-      if (typeof message.content === "string") {
-        totalChars += message.content.length;
-      } else if (Array.isArray(message.content)) {
-        for (const part of message.content) {
-          if (
-            part?.type === "text" &&
-            typeof part.text === "string"
-          ) {
-            totalChars += part.text.length;
-          } else if (part?.type === "image_url") {
-            const imageUrl = part?.image_url?.url;
-
-            if (
-              typeof imageUrl !== "string" ||
-              !imageUrl.startsWith("data:image/")
-            ) {
-              return json(400, {
-                error: "Images must use valid image data URLs.",
-              });
-            }
-
-            totalChars += imageUrl.length;
-          }
-        }
-      } else {
-        return json(400, {
-          error: "Message content must be text or supported image content.",
-        });
-      }
-    }
-
-    if (totalChars > MAX_TEXT_CHARS + MAX_BODY) {
-      return json(413, {
-        error: "Request content is too large.",
-      });
-    }
-
-    // Send the request to Gemini.
-    const apiUrl = `${base}/chat/completions`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
 
     let upstream;
 
     try {
-      upstream = await fetch(apiUrl, {
+      upstream = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-  model,
-  messages: body.messages,
-  max_tokens: 1200,
-}),
+          model,
+          messages: body.messages,
+        }),
+        signal: controller.signal,
       });
     } catch (error) {
-      console.error(
-        "MODEL AI: Failed to connect to AI provider:",
-        error?.message || String(error)
-      );
+      console.error("[MODEL AI] Provider fetch failed", {
+        name: error?.name,
+        message: error?.message,
+      });
 
       return json(502, {
-        error:
-          "Could not connect to the AI provider. Check Cloudflare settings and provider availability.",
+        error: "Could not connect to the AI provider.",
+        details:
+          error?.name === "AbortError"
+            ? "The provider request timed out."
+            : String(error?.message || "Network request failed").slice(0, 250),
       });
+    } finally {
+      clearTimeout(timer);
     }
 
     const raw = await upstream.text();
 
-    let data = {};
-
+    let data;
     try {
       data = JSON.parse(raw);
     } catch {
-      data = {};
+      data = null;
     }
 
-    // Return a helpful error if the provider rejects the request.
+    console.log("[MODEL AI] Provider responded", {
+      status: upstream.status,
+      contentType: upstream.headers.get("content-type"),
+    });
+
     if (!upstream.ok) {
       const detail =
         data?.error?.message ||
         data?.message ||
-        `The provider returned HTTP ${upstream.status}.`;
+        raw.slice(0, 300) ||
+        "No provider error details returned.";
 
-      console.error("MODEL AI provider error:", {
+      console.error("[MODEL AI] Provider rejected request", {
         status: upstream.status,
-        detail: String(detail).slice(0, 400),
+        detail: String(detail).slice(0, 300),
       });
 
       return json(502, {
-        error: `Gemini API error (HTTP ${upstream.status}): ${String(
-          detail
-        ).slice(0, 400)}`,
+        error: "AI provider returned an error.",
+        providerStatus: upstream.status,
+        details: String(detail).slice(0, 300),
       });
     }
 
-    if (!raw || Object.keys(data).length === 0) {
-      return json(502, {
-        error: "The AI provider returned an invalid response.",
-      });
-    }
-
-    // Extract the AI response.
     const content = data?.choices?.[0]?.message?.content;
-
     const answer = Array.isArray(content)
-      ? content
-          .map((part) => part?.text || "")
-          .join("\n")
+      ? content.map((part) => part?.text || "").join("\n")
       : content;
 
     if (typeof answer !== "string" || !answer.trim()) {
-      console.error(
-        "MODEL AI: Provider response did not contain chat text."
-      );
+      console.error("[MODEL AI] Provider response contained no text");
 
       return json(502, {
-        error:
-          "The AI provider returned no text. Check the selected model and its access.",
+        error: "The provider returned no text.",
+        details: "Check the selected model and provider response.",
       });
     }
 
-    return json(200, {
-      text: answer.trim(),
-    });
+    return json(200, { text: answer.trim() });
   } catch (error) {
-    console.error(
-      "MODEL AI chat function error:",
-      error?.stack || error?.message || String(error)
-    );
+    console.error("[MODEL AI] Unexpected function error", {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack,
+    });
 
     return json(500, {
-      error:
-        "An internal chat server error occurred. Check Cloudflare Functions logs.",
+      error: "Unexpected server-side chat error.",
+      details: String(error?.message || "Unknown error").slice(0, 250),
     });
   }
 }
