@@ -1,5 +1,5 @@
 import re,os,shutil,json
-D='YOURDOMAIN.online'
+D='modelaitools.online'
 src=open('/mnt/user-data/outputs/model-ai.html').read()
 css=re.search(r'<style>(.*?)</style>',src,re.S).group(1)
 js=src.split('<script>\n',1)[1].split('const P={',1)[0]
