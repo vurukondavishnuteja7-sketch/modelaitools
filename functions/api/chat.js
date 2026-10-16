@@ -33,7 +33,6 @@ export function onRequestGet() {
 
 // Actual AI chat route: POST /api/chat
 export async function onRequestPost({ request, env }) {
-    return json(200, { ok: true, message: "POST handler is running." });
   try {
     const apiKey = String(env?.AI_API_KEY || "").trim();
     const model = String(env?.AI_CHAT_MODEL || "").trim();
