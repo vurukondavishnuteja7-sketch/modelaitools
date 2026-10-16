@@ -147,11 +147,10 @@ export async function onRequestPost({ request, env }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model,
-          messages: body.messages,
-          temperature: 0.7,
-          max_tokens: 1200,
-        }),
+  model,
+  messages: body.messages,
+  max_tokens: 1200,
+}),
       });
     } catch (error) {
       console.error(
