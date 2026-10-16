@@ -1,0 +1,6 @@
+/style.css
+  Cache-Control: public, max-age=86400
+/tools.js
+  Cache-Control: public, max-age=86400
+/ads.txt
+  Content-Type: text/plain; charset=utf-8
