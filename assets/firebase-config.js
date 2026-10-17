@@ -7,7 +7,7 @@
   "use strict";
 
   const config = {
-    apiKey: "AIzaSyDX1ru4Tt19yqfIe3oKUtc3yn5v_l55fms",
+    apiKey: "AIzaSyDXlru4Tt19yqfIe3oKUtc3yn5v_l55fms",
     authDomain: "modelaitools.firebaseapp.com",
     projectId: "modelaitools",
     storageBucket: "modelaitools.firebasestorage.app",
