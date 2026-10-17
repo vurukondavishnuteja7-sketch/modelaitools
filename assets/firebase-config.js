@@ -7,7 +7,7 @@ export const firebaseConfig = {
   authDomain: "modelaitools.firebaseapp.com",
   projectId: "modelaitools",
   appId: "1:833872426359:web:67a321c8b5619ca79d5d72",
-  messagingSenderId: "833872426359"
-  measurementId: "G-DZM6GER0W6"
+  messagingSenderId: "838372426359",
+  measurementId: "G-DZMG6ER0W6"
 };
 export const firebaseConfigured = Object.values(firebaseConfig).every(v => typeof v === "string" && v.length > 0 && !v.startsWith("PASTE_"));
