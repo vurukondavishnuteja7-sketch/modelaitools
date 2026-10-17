@@ -6,7 +6,7 @@
 (() => {
   'use strict';
   const config = {
-    apiKey: 'AIzaSyDX1ru4Tt19yqfIe3oKUtc3yn5v_155fms',
+    apiKey: 'AIzaSyDXlru4Tt19yqfIe3oKUtc3yn5v_l55fms',
     authDomain: 'modelaitools.firebaseapp.com',
     projectId: 'modelaitools',
     appId: '1:833872426359:web:67a321c8b5619ca79d5d72',
