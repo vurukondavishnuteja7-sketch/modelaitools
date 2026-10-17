@@ -1,35 +1,261 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, updateProfile, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { firebaseConfig, firebaseConfigured } from "/assets/firebase-config.js";
+// MODEL AI - Firebase authentication bootstrap with visible diagnostics.
+// Place at: assets/firebase-auth.js
+// Firebase SDK/config imports are loaded dynamically so a failed import
+// does not leave the login buttons completely unresponsive.
 
-const $ = (s, root=document) => root.querySelector(s);
+const $ = (selector, root = document) => root.querySelector(selector);
 const safeText = (value) => String(value || "").trim();
-let auth = null;
-let firebaseReady = false;
-let currentUser = null;
-const setStatus = (text, kind="info") => { const el=$("#auth-status"); if(el){el.textContent=text;el.dataset.kind=kind;el.hidden=false;} };
-const setBusy = (busy) => document.querySelectorAll("[data-auth-action]").forEach(b=>{b.disabled=busy;b.setAttribute("aria-busy",String(busy));});
-const friendlyError = (error) => { const code=error?.code||""; const map={
-  "auth/invalid-email":"Please enter a valid email address.",
-  "auth/missing-password":"Please enter your password.",
-  "auth/weak-password":"Use a password with at least 6 characters.",
-  "auth/email-already-in-use":"An account already exists for this email. Try signing in.",
-  "auth/invalid-credential":"Email or password is incorrect.",
-  "auth/user-not-found":"No account found for this email. Create an account first.",
-  "auth/wrong-password":"Email or password is incorrect.",
-  "auth/popup-closed-by-user":"Google sign-in was closed before finishing.",
-  "auth/unauthorized-domain":"This domain is not authorized in Firebase Authentication settings.",
-  "auth/operation-not-allowed":"Enable this sign-in method in Firebase Console → Authentication → Sign-in method.",
-  "auth/network-request-failed":"Network error. Check your internet connection and try again."
-}; return map[code] || (error?.message || "Authentication failed. Check Firebase setup and try again."); };
-function requireConfig(){ if(!firebaseConfigured){setStatus("Firebase setup is not complete yet. Follow FIREBASE-SETUP.md and add your web app config.","error");return false;} return true; }
-function setMode(mode){const create=mode==="create"; $("#auth-title") && ( $("#auth-title").textContent=create?"Create your MODEL AI account":"Welcome back" ); $("#auth-subtitle") && ( $("#auth-subtitle").textContent=create?"Save your account details and get started.":"Sign in to continue to your workspace." ); $("#name-field")?.toggleAttribute("hidden",!create); $("#auth-name")?.toggleAttribute("hidden",!create); $("#auth-submit") && ( $("#auth-submit").textContent=create?"Create account":"Sign in" ); $("#auth-mode") && ( $("#auth-mode").textContent=create?"Already have an account? Sign in":"New to MODEL AI? Create an account" ); $("#auth-mode")?.setAttribute("data-mode",create?"signin":"create"); $("#auth-mode")?.setAttribute("aria-pressed",String(create)); $("#auth-mode")?.classList.toggle("active",create); const title=$("#auth-mode"); if(title) title.dataset.next=create?"signin":"create"; const status=$("#auth-status"); if(status) status.hidden=true; }
-function updateAccountUI(user){currentUser=user||null;const link=$("#auth-profile-link");if(link){const name=user?(user.displayName||user.email?.split("@")[0]||"Account"):"Sign in";$("#auth-display-name")&&( $("#auth-display-name").textContent=name );$("#auth-welcome")&&( $("#auth-welcome").textContent=user?"Signed in":"Welcome" );$("#auth-avatar")&&( $("#auth-avatar").textContent=user?(name[0]||"A").toUpperCase():"👤" );link.href=user?"/account.html":"/login.html";link.setAttribute("aria-label",user?"Open your MODEL AI account":"Sign in to MODEL AI");} const accountName=$("#account-display-name");if(accountName)accountName.textContent=user?(user.displayName||user.email||"MODEL AI member"):"You are not signed in";const accountEmail=$("#account-email");if(accountEmail)accountEmail.textContent=user?.email||"Sign in to view account details.";$("#account-signed-in")?.toggleAttribute("hidden",!user);$("#account-signed-out")?.toggleAttribute("hidden",!!user);}
-try { if(firebaseConfigured){ const app=initializeApp(firebaseConfig); auth=getAuth(app); firebaseReady=true; onAuthStateChanged(auth, user=>{updateAccountUI(user); if($("#login-card")&&user){setStatus("You are signed in. Opening your account…","success");setTimeout(()=>{location.href="/account.html";},650);}}); } else { updateAccountUI(null); } } catch(error){console.error("Firebase initialization error",error);setStatus("Firebase could not start. Check assets/firebase-config.js.","error");}
 
-const modeButton=$("#auth-mode");modeButton?.addEventListener("click",()=>setMode(modeButton.dataset.next||"create"));
-$("#auth-form")?.addEventListener("submit",async e=>{e.preventDefault();if(!requireConfig())return;const email=safeText($("#auth-email")?.value);const password=$("#auth-password")?.value||"";const name=safeText($("#auth-name")?.value);const creating=modeButton?.dataset.next==="signin";if(!email||!password){setStatus("Enter your email and password.","error");return;}if(creating&&!name){setStatus("Enter your name to create an account.","error");return;}setBusy(true);try{if(creating){const cred=await createUserWithEmailAndPassword(auth,email,password);await updateProfile(cred.user,{displayName:name});setStatus("Account created successfully. Redirecting…","success");}else{await signInWithEmailAndPassword(auth,email,password);setStatus("Signed in successfully. Redirecting…","success");}setTimeout(()=>location.href="/account.html",500);}catch(error){setStatus(friendlyError(error),"error");}finally{setBusy(false);}});
-$("#google-signin")?.addEventListener("click",async()=>{if(!requireConfig())return;setBusy(true);try{const provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:"select_account"});await signInWithPopup(auth,provider);setStatus("Google sign-in successful. Redirecting…","success");setTimeout(()=>location.href="/account.html",500);}catch(error){setStatus(friendlyError(error),"error");}finally{setBusy(false);}});
-$("#password-reset")?.addEventListener("click",async()=>{if(!requireConfig())return;const email=safeText($("#auth-email")?.value);if(!email){setStatus("Enter your email address first, then choose Forgot password.","error");return;}try{await sendPasswordResetEmail(auth,email);setStatus("Password reset email sent. Check your inbox and spam folder.","success");}catch(error){setStatus(friendlyError(error),"error");}});
-$("#signout-button")?.addEventListener("click",async()=>{if(!auth||!currentUser){location.href="/login.html";return;}try{await signOut(auth);location.href="/";}catch(error){setStatus(friendlyError(error),"error");}});
-if($("#auth-form"))setMode("signin");
+let auth = null;
+let authSdk = null;
+let firebasePromise = null;
+let currentUser = null;
+
+function setStatus(message, kind = "info") {
+  const el = $("#auth-status");
+  if (!el) {
+    console[kind === "error" ? "error" : "info"]("[MODEL AI auth]", message);
+    return;
+  }
+  el.textContent = message;
+  el.dataset.kind = kind;
+  el.hidden = false;
+}
+
+function hideStatus() {
+  const el = $("#auth-status");
+  if (el) el.hidden = true;
+}
+
+function setBusy(busy) {
+  document.querySelectorAll("[data-auth-action]").forEach((button) => {
+    button.disabled = busy;
+    button.setAttribute("aria-busy", String(busy));
+  });
+}
+
+function friendlyError(error) {
+  const code = error?.code || "";
+  const messages = {
+    "auth/invalid-email": "Please enter a valid email address.",
+    "auth/missing-password": "Please enter your password.",
+    "auth/weak-password": "Use a password with at least 6 characters.",
+    "auth/email-already-in-use": "An account already exists for this email. Try signing in.",
+    "auth/invalid-credential": "Email or password is incorrect.",
+    "auth/user-not-found": "No account found for this email. Create an account first.",
+    "auth/wrong-password": "Email or password is incorrect.",
+    "auth/popup-closed-by-user": "Google sign-in was closed before finishing.",
+    "auth/unauthorized-domain": "This domain is not authorized in Firebase Authentication settings.",
+    "auth/operation-not-allowed": "Enable this sign-in method in Firebase Console → Authentication → Sign-in method.",
+    "auth/network-request-failed": "Network error. Check your internet connection and try again.",
+    "auth/popup-blocked": "Your browser blocked the Google sign-in popup. Allow popups and retry.",
+    "auth/cancelled-popup-request": "A sign-in popup is already open. Finish or close it first."
+  };
+  if (messages[code]) return messages[code];
+  return error?.message || "Authentication failed. Check the Firebase setup and try again.";
+}
+
+function setMode(mode) {
+  const creating = mode === "create";
+  const title = $("#auth-title");
+  const subtitle = $("#auth-subtitle");
+  const nameLabel = $("#name-field");
+  const nameInput = $("#auth-name");
+  const submit = $("#auth-submit");
+  const modeButton = $("#auth-mode");
+
+  if (title) title.textContent = creating ? "Create your MODEL AI account" : "Welcome back";
+  if (subtitle) subtitle.textContent = creating
+    ? "Create an account to get started."
+    : "Sign in to continue to your workspace.";
+  if (nameLabel) nameLabel.hidden = !creating;
+  if (nameInput) {
+    nameInput.hidden = !creating;
+    nameInput.required = creating;
+    nameInput.autocomplete = "name";
+  }
+  if (submit) submit.textContent = creating ? "Create account" : "Sign in";
+  if (modeButton) {
+    modeButton.textContent = creating
+      ? "Already have an account? Sign in"
+      : "New to MODEL AI? Create an account";
+    modeButton.dataset.next = creating ? "signin" : "create";
+    modeButton.dataset.mode = creating ? "create" : "signin";
+    modeButton.setAttribute("aria-pressed", String(creating));
+  }
+  hideStatus();
+}
+
+function updateAccountUI(user) {
+  currentUser = user || null;
+  const link = $("#auth-profile-link");
+  if (link) {
+    const name = user ? (user.displayName || user.email?.split("@")[0] || "Account") : "Sign in";
+    const nameEl = $("#auth-display-name");
+    const welcomeEl = $("#auth-welcome");
+    const avatarEl = $("#auth-avatar");
+    if (nameEl) nameEl.textContent = name;
+    if (welcomeEl) welcomeEl.textContent = user ? "Signed in" : "Welcome";
+    if (avatarEl) avatarEl.textContent = user ? (name[0] || "A").toUpperCase() : "👤";
+    link.href = user ? "/account.html" : "/login.html";
+    link.setAttribute("aria-label", user ? "Open your MODEL AI account" : "Sign in to MODEL AI");
+  }
+
+  const accountName = $("#account-display-name");
+  const accountEmail = $("#account-email");
+  if (accountName) accountName.textContent = user ? (user.displayName || user.email || "MODEL AI member") : "You are not signed in";
+  if (accountEmail) accountEmail.textContent = user?.email || "Sign in to view account details.";
+  $("#account-signed-in")?.toggleAttribute("hidden", !user);
+  $("#account-signed-out")?.toggleAttribute("hidden", !!user);
+}
+
+async function ensureFirebase() {
+  if (auth && authSdk) return { auth, authSdk };
+  if (!firebasePromise) {
+    firebasePromise = (async () => {
+      let appModule;
+      let authModule;
+      let configModule;
+      try {
+        [appModule, authModule, configModule] = await Promise.all([
+          import("https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"),
+          import("https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"),
+          import("/assets/firebase-config.js")
+        ]);
+      } catch (error) {
+        console.error("[MODEL AI auth] Failed to load Firebase modules/config", error);
+        throw new Error("Firebase JavaScript could not load. Check that /assets/firebase-auth.js and /assets/firebase-config.js deploy correctly, then check the browser Console for the import error.");
+      }
+
+      if (!configModule.firebaseConfigured) {
+        throw new Error("Firebase setup is incomplete. Check that assets/firebase-config.js contains your actual Firebase web app values, not PASTE_ placeholders.");
+      }
+
+      try {
+        const app = appModule.initializeApp(configModule.firebaseConfig);
+        auth = authModule.getAuth(app);
+        authSdk = authModule;
+        authModule.onAuthStateChanged(auth, (user) => {
+          updateAccountUI(user);
+          if ($("#login-card") && user) {
+            setStatus("You are signed in. Opening your account…", "success");
+            setTimeout(() => { location.href = "/account.html"; }, 650);
+          }
+        });
+        return { auth, authSdk };
+      } catch (error) {
+        console.error("[MODEL AI auth] Firebase initialization failed", error);
+        throw new Error("Firebase could not initialize. Recheck the web app config in Firebase Console → Project settings → Your apps.");
+      }
+    })();
+  }
+
+  try {
+    return await firebasePromise;
+  } catch (error) {
+    setStatus(friendlyError(error), "error");
+    throw error;
+  }
+}
+
+// Bind UI actions immediately. The account-mode toggle works even if Firebase fails to load.
+const modeButton = $("#auth-mode");
+if (modeButton) {
+  modeButton.addEventListener("click", () => {
+    setMode(modeButton.dataset.next || "create");
+  });
+}
+
+const form = $("#auth-form");
+if (form) {
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const email = safeText($("#auth-email")?.value);
+    const password = $("#auth-password")?.value || "";
+    const name = safeText($("#auth-name")?.value);
+    const creating = modeButton?.dataset.next === "signin";
+
+    if (!email) return setStatus("Enter your email address.", "error");
+    if (password.length < 6) return setStatus("Use a password with at least 6 characters.", "error");
+    if (creating && !name) return setStatus("Enter your name to create an account.", "error");
+
+    setBusy(true);
+    try {
+      const loaded = await ensureFirebase();
+      if (creating) {
+        const credential = await loaded.authSdk.createUserWithEmailAndPassword(loaded.auth, email, password);
+        await loaded.authSdk.updateProfile(credential.user, { displayName: name });
+        setStatus("Account created successfully. Redirecting…", "success");
+      } else {
+        await loaded.authSdk.signInWithEmailAndPassword(loaded.auth, email, password);
+        setStatus("Signed in successfully. Redirecting…", "success");
+      }
+      setTimeout(() => { location.href = "/account.html"; }, 500);
+    } catch (error) {
+      setStatus(friendlyError(error), "error");
+      console.error("[MODEL AI auth] Email auth action failed", error);
+    } finally {
+      setBusy(false);
+    }
+  });
+}
+
+const googleButton = $("#google-signin");
+if (googleButton) {
+  googleButton.addEventListener("click", async () => {
+    setBusy(true);
+    try {
+      const loaded = await ensureFirebase();
+      const provider = new loaded.authSdk.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      await loaded.authSdk.signInWithPopup(loaded.auth, provider);
+      setStatus("Google sign-in successful. Redirecting…", "success");
+      setTimeout(() => { location.href = "/account.html"; }, 500);
+    } catch (error) {
+      setStatus(friendlyError(error), "error");
+      console.error("[MODEL AI auth] Google sign-in failed", error);
+    } finally {
+      setBusy(false);
+    }
+  });
+}
+
+const resetButton = $("#password-reset");
+if (resetButton) {
+  resetButton.addEventListener("click", async () => {
+    const email = safeText($("#auth-email")?.value);
+    if (!email) return setStatus("Enter your email address first, then choose Forgot password.", "error");
+    setBusy(true);
+    try {
+      const loaded = await ensureFirebase();
+      await loaded.authSdk.sendPasswordResetEmail(loaded.auth, email);
+      setStatus("Password reset email sent. Check your inbox and spam folder.", "success");
+    } catch (error) {
+      setStatus(friendlyError(error), "error");
+      console.error("[MODEL AI auth] Password reset failed", error);
+    } finally {
+      setBusy(false);
+    }
+  });
+}
+
+const signoutButton = $("#signout-button");
+if (signoutButton) {
+  signoutButton.addEventListener("click", async () => {
+    if (!auth || !currentUser) {
+      location.href = "/login.html";
+      return;
+    }
+    try {
+      await authSdk.signOut(auth);
+      location.href = "/";
+    } catch (error) {
+      setStatus(friendlyError(error), "error");
+    }
+  });
+}
+
+if (form) setMode("signin");
+updateAccountUI(null);
+// Initialize in the background so signed-in users and the header are updated.
+void ensureFirebase().catch((error) => console.warn("[MODEL AI auth] Startup check failed", error));
